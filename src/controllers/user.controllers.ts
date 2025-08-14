@@ -80,42 +80,47 @@ export const signUpUser = async (
     }
 }
 export const signInUser = async (
-    data: {
-        email: string,
-        password: string
-    },
+    request: Request,
     response: Response,
     next: NextFunction
 ) => {
     try {
-        const { email, password } = data;
+        if (!request.body) {
+            ErrorResponse(
+                StatusCode.BAD_REQUEST,
+                'invalid body',
+                next
+            );
+            return;
+        }
+        const { email, password } = await request.body;;
         if (!email || !password) {
-            return ErrorResponse(
+            ErrorResponse(
                 StatusCode.BAD_REQUEST,
                 'invalid data!',
                 next
             );
+            return;
         }
         const userExists = await User.findOne({ email });
         if (!userExists) {
-            return ErrorResponse(
+            ErrorResponse(
                 StatusCode.NOT_FOUND,
                 'user not found!',
                 next
             );
+            return;
         }
-
         const passwordCorrect = await bcrypt.compare(password, userExists.password);
-
         if (!passwordCorrect) {
-            return ErrorResponse(
+            ErrorResponse(
                 StatusCode.UNAUTHORIZED,
                 'email or password incorrect!',
                 next
             );
+            return;
         }
-
-        const isVerified = userExists.verified;
+        const isVerified = await userExists.verified;
         if (!isVerified) {
             const OTP = Math.floor(100000 + Math.random() * 900000);
             const emailResponse = await sendEmail(
@@ -137,45 +142,47 @@ export const signInUser = async (
                     otp: OTP,
                     otpExpires: tenMinutes
                 });
-                return SuccessResponse(
+                SuccessResponse(
                     StatusCode.OK,
                     'verification email sent!',
                     null,
                     response
                 );
+                return;
             }
-        } else {
-            const payload: IPayload = {
-                _id: userExists._id as string,
-                firstName: userExists.firstName,
-                lastName: userExists.lastName,
-                email: userExists.email,
-                profileImage: userExists.profileImage as string
-            }
-            const token = generateAndSignToken(payload);
-            const accessToken = response.cookie('access-token', token, {
-                httpOnly: true,
-                path: '/',
-                secure: true,
-                sameSite: 'none'
-            });
-            await userExists.updateOne({
-                refreshToken: token
-            });
-            return SuccessResponse(
-                StatusCode.OK,
-                'user loggedin!',
-                accessToken,
-                response
-            );
         }
-
+        const payload: IPayload = {
+            _id: userExists._id as string,
+            firstName: userExists.firstName,
+            lastName: userExists.lastName,
+            email: userExists.email,
+            profileImage: userExists.profileImage as string
+        }
+        const token = generateAndSignToken(payload);
+        response.cookie('access-token', token, {
+            httpOnly: true,
+            path: '/',
+            secure: true,
+            sameSite: 'none'
+        });
+        await userExists.updateOne({
+            refreshToken: token
+        });
+        console.log('reaching almost end!')
+        SuccessResponse(
+            StatusCode.OK,
+            'user loggedin!',
+            token,
+            response
+        );
+        return;
     } catch (error: any) {
-        return ErrorResponse(
+        ErrorResponse(
             StatusCode.INTERNAL_SERVER_ERROR,
             error.message,
             next
-        )
+        );
+        return;
     }
 }
 export const verifyUser = async (
@@ -218,6 +225,12 @@ export const verifyUser = async (
             );
             return;
         }
+
+        await user.updateOne(
+            {
+                verified: true
+            }
+        )
         SuccessResponse(
             StatusCode.OK,
             'account verified!',
@@ -234,20 +247,21 @@ export const verifyUser = async (
     }
 }
 export const updateUser = async (
-    data: {
-        phone: string,
-        address: string,
-        dateOfBirth: Date,
-        gender: "male" | "female",
-        profileImage: string
-    },
     request: Request,
     response: Response,
     next: NextFunction
 ) => {
-    const { phone, address, dateOfBirth, gender, profileImage } = data;
+    if (!request.body) {
+        ErrorResponse(
+            StatusCode.BAD_REQUEST,
+            'invalid body!',
+            next
+        )
+        return;
+    }
+    const { phone, address, dateOfBirth, gender, profileImage } = request.body;
     try {
-        if (!phone || !address || !dateOfBirth || !gender || !profileImage) {
+        if (!phone || !address || !dateOfBirth || !gender) {
             return ErrorResponse(
                 StatusCode.BAD_REQUEST,
                 'invalid data',
@@ -256,11 +270,12 @@ export const updateUser = async (
         }
         const accessToken = request.cookies['access-token'];
         if (!accessToken) {
-            return ErrorResponse(
+            ErrorResponse(
                 StatusCode.UNAUTHORIZED,
                 'user not loggedin!',
                 next
             )
+            return;
         }
         const decodedToken = verify(accessToken, process.env.JWT_SECRET as string);
         if (typeof decodedToken == 'object') {
@@ -271,7 +286,6 @@ export const updateUser = async (
                 lastName: decodedToken.lastName,
                 profileImage: decodedToken.profileImage
             };
-
             const user = await User.findOne({ email: data.email });
             if (!user) {
                 return ErrorResponse(
@@ -280,7 +294,7 @@ export const updateUser = async (
                     next
                 )
             }
-            const updatedUser = await user.updateOne(
+            await user.updateOne(
                 {
                     phone,
                     address,
@@ -311,21 +325,22 @@ export const logoutUser = async (
 ) => {
     try {
         const accessToken = request.cookies['access-token'];
-
         if (!accessToken) {
-            return ErrorResponse(
+            ErrorResponse(
                 StatusCode.BAD_REQUEST,
                 'token not found!',
                 next
             );
+            return;
         }
         const user = await User.findOne({ refreshToken: accessToken });
         if (!user) {
-            return ErrorResponse(
+            ErrorResponse(
                 StatusCode.NOT_FOUND,
                 'user not found!',
                 next
             );
+            return;
         }
         await user.updateOne({ refreshToken: null });
         response.clearCookie('access-token', {
@@ -334,17 +349,19 @@ export const logoutUser = async (
             path: '/',
             sameSite: 'none'
         });
-        return SuccessResponse(
+        SuccessResponse(
             StatusCode.OK,
             'user logged out!',
             null,
             response
         );
+        return;
     } catch (error: any) {
-        return ErrorResponse(
+        ErrorResponse(
             StatusCode.INTERNAL_SERVER_ERROR,
             error.message,
             next
         );
+        return;
     }
 }

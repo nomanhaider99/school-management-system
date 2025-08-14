@@ -1,8 +1,9 @@
-import { Router, Request, Response, NextFunction } from "express";
-import { signInUser, signUpUser, updateUser, verifyUser } from "../controllers/user.controllers";
+import { Router } from "express";
+import { logoutUser, signInUser, signUpUser, updateUser, verifyUser } from "../controllers/user.controllers";
 const router = Router();
 router.post('/signup', signUpUser);
+router.post('/signin', signInUser);
 router.post('/verify', verifyUser);
-// router.post('/signin', signInUser);
-// router.patch('/update', updateUser);
+router.patch('/update', updateUser);
+router.get('/logout', logoutUser);
 export default router;
